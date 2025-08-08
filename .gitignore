@@ -98,3 +98,7 @@ logs/
 # uv
 # Intentionally keep uv.lock tracked
 # (no ignore for uv.lock) 
+# Generated questions (ignore contents)
+questions/english/
+questions/math/
+questions/thinking/ 
