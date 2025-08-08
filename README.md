@@ -45,9 +45,9 @@ Year 6 selective exam question generator powered by Gemini and simple agent-to-a
 ```
 Question-Gen/
   agents/
-    english/agent.py      # Reading items (5-option MCQs)
-    math/agent.py         # Math reasoning items (5-option MCQs)
-    thinking/agent.py     # Thinking Skills items (5-option MCQs) + emits a skill plan
+    english/agent.py      # Reading items (5-option MCQs) + emits skill.plan.english
+    math/agent.py         # Math reasoning items (5-option MCQs) + emits skill.plan.math
+    thinking/agent.py     # Thinking Skills items (5-option MCQs) + emits a generic skill.plan
     validator/agent.py    # Pass-through validator placeholder
   orchestrator/
     router.py             # In-process async event bus
@@ -63,13 +63,21 @@ Question-Gen/
 ```
 
 ## How it works (A2A flow)
-- `topic.received` → `agents/thinking` creates a short `skill.plan` and Thinking items.
-- `skill.plan` → `agents/math` and `agents/english` generate items.
-- `items.*` → `agents/validator` emits `items.validated`.
-- `main.py` listens to `items.validated`, prints counts, and saves JSON via `shared/storage.py`.
+- `topic.received` → planners:
+  - `agents/thinking` emits `skill.plan` and also generates `items.thinking`
+  - `agents/math` emits `skill.plan.math`
+  - `agents/english` emits `skill.plan.english`
+- Generators consume subject plans:
+  - `agents/math` listens to `skill.plan.math` → emits `items.math`
+  - `agents/english` listens to `skill.plan.english` → emits `items.english`
+  - `agents/thinking` directly emits `items.thinking` (no subject-specific plan consumption)
+- Validation and storage:
+  - `items.*` → `agents/validator` emits `items.validated`
+  - `main.py` listens to `items.validated`, prints counts, and saves JSON via `shared/storage.py`
 
 ## Configuration knobs
 - 5-option MCQ policy: set in `shared/config.py` (`choices=5`) and enforced in each agent’s coercion logic.
+- Subject-specific planning: Math/English each emit and consume their own plans (`skill.plan.math`, `skill.plan.english`). They no longer consume the generic `skill.plan` to avoid duplicates.
 - Item counts and types: adjust prompt strings in `agents/*/agent.py` (`PROMPT`/`SYSTEM`).
 - Model selection: set `GEMINI_MODEL` in `.env`.
 
