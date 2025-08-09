@@ -2,7 +2,7 @@ from __future__ import annotations
 import uuid
 from orchestrator.router import Router
 from shared.schemas import JobContext, Item, Choice
-from shared.gemini import call_gemini_json
+from shared.gemini import call_gemini_json_async
 
 # Events
 EVENT_IN_TOPIC = "topic.received"
@@ -76,7 +76,6 @@ def _parse_plan(plan_resp: object, topic: str) -> list[dict]:
         sp = plan_resp.get("skill_plan")
         if isinstance(sp, list):
             return sp
-        # Some models may return a single object
         return [plan_resp]
     return [
         {
@@ -94,7 +93,7 @@ def register(router: Router) -> None:
     async def handle_topic(msg: dict) -> None:
         ctx = JobContext(**msg["ctx"])  # type: ignore[arg-type]
         topic = msg.get("topic", "mathematical reasoning")
-        plan_resp = call_gemini_json(PROMPT_PLAN_TEMPLATE.format(topic=topic), system=SYSTEM_PLAN)
+        plan_resp = await call_gemini_json_async(PROMPT_PLAN_TEMPLATE.format(topic=topic), system=SYSTEM_PLAN)
         plan = _parse_plan(plan_resp, topic)
         await router.emit(EVENT_OUT_PLAN, {"ctx": ctx.to_dict(), "skill_plan": plan})
 
@@ -104,7 +103,6 @@ def register(router: Router) -> None:
     async def handle_plan(msg: dict) -> None:
         ctx = JobContext(**msg["ctx"])  # type: ignore[arg-type]
         plan = msg.get("skill_plan") or []
-        # Build a plan-aware prompt
         plan_hint = ""
         if plan and isinstance(plan, list):
             p0 = plan[0]
@@ -112,7 +110,7 @@ def register(router: Router) -> None:
             dists = ", ".join(p0.get("distractors", [])[:4]) if isinstance(p0.get("distractors"), list) else ""
             topic = p0.get("topic") or p0.get("skill") or "Year 6 math"
             plan_hint = f"\nFocus topic: {topic}. Steps: {steps}. Distractors to include: {dists}."
-        resp = call_gemini_json(PROMPT_ITEMS_BASE + plan_hint, system=SYSTEM_ITEMS)
+        resp = await call_gemini_json_async(PROMPT_ITEMS_BASE + plan_hint, system=SYSTEM_ITEMS)
         raw_items = resp.get("items") or []
         items = _coerce_items(raw_items) or [
             Item(

@@ -817,12 +817,14 @@ name = "question-gen"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "httpx" },
     { name = "python-a2a" },
     { name = "python-dotenv" },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "httpx", specifier = ">=0.27.0" },
     { name = "python-a2a", specifier = ">=0.5.9" },
     { name = "python-dotenv", specifier = ">=1.1.1" },
 ]
