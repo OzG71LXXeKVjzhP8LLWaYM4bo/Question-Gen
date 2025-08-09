@@ -1,9 +1,8 @@
 from __future__ import annotations
 import json
 import os
-import urllib.request
-import urllib.error
 from typing import Any, Dict, Optional
+import httpx
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -17,7 +16,7 @@ def _ensure_model_path(model: str) -> str:
     return model if model.startswith("models/") else f"models/{model}"
 
 
-def _build_request(model: str, prompt: str, system: Optional[str], temperature: float, max_tokens: int) -> Dict[str, Any]:
+def _build_request(prompt: str, system: Optional[str], temperature: float, max_tokens: int) -> Dict[str, Any]:
     req: Dict[str, Any] = {
         "contents": [
             {"role": "user", "parts": [{"text": prompt}]}
@@ -40,22 +39,20 @@ def _parse_text(response_obj: Dict[str, Any]) -> str:
         return json.dumps({"error": "no_text"})
 
 
-def call_gemini_json(prompt: str, *, system: Optional[str] = None, model: Optional[str] = None,
-                      temperature: float = 0.4, max_output_tokens: int = 2048) -> Dict[str, Any]:
+async def call_gemini_json_async(prompt: str, *, system: Optional[str] = None, model: Optional[str] = None,
+                                 temperature: float = 0.4, max_output_tokens: int = 2048,
+                                 timeout_s: float = 30.0) -> Dict[str, Any]:
     api_key = _GEMINI_API_KEY
     if not api_key:
         return {}
-
     model_name = _ensure_model_path(model or _DEFAULT_MODEL)
     url = f"{_API_BASE}/{model_name}:generateContent?key={api_key}"
-    payload = _build_request(model_name, prompt, system, temperature, max_output_tokens)
-
-    data = json.dumps(payload).encode("utf-8")
-    req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
+    payload = _build_request(prompt, system, temperature, max_output_tokens)
     try:
-        with urllib.request.urlopen(req, timeout=60) as resp:
-            body = resp.read().decode("utf-8")
-            text = _parse_text(json.loads(body))
+        async with httpx.AsyncClient(timeout=timeout_s) as client:
+            resp = await client.post(url, json=payload)
+            resp.raise_for_status()
+            text = _parse_text(resp.json())
             try:
                 return json.loads(text)
             except json.JSONDecodeError:
@@ -67,13 +64,25 @@ def call_gemini_json(prompt: str, *, system: Optional[str] = None, model: Option
                     except Exception:
                         pass
                 return {}
-    except urllib.error.HTTPError as e:
+    except httpx.HTTPError as e:
         try:
-            err = e.read().decode("utf-8")
+            detail = e.response.text  # type: ignore[union-attr]
         except Exception:
-            err = str(e)
-        print("Gemini HTTPError:", err)
+            detail = str(e)
+        print("Gemini HTTPError:", detail)
         return {}
     except Exception as e:
         print("Gemini error:", e)
         return {}
+
+
+# Optional sync shim for compatibility (used nowhere by default)
+def call_gemini_json(prompt: str, **kwargs: Any) -> Dict[str, Any]:
+    import asyncio
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+    if loop and loop.is_running():
+        return {}
+    return asyncio.run(call_gemini_json_async(prompt, **kwargs))

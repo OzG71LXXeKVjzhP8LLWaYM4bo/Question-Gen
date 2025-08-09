@@ -1,8 +1,9 @@
 from __future__ import annotations
 import uuid
+import asyncio
 from orchestrator.router import Router
 from shared.schemas import JobContext, Item, Choice
-from shared.gemini import call_gemini_json
+from shared.gemini import call_gemini_json_async
 
 EVENT_IN = "topic.received"
 EVENT_OUT_PLAN = "skill.plan"
@@ -65,15 +66,23 @@ def register(router: Router) -> None:
     async def handle(msg: dict) -> None:
         ctx = JobContext(**msg["ctx"])  # type: ignore[arg-type]
         topic = msg.get("topic", "general reasoning")
-        # Plan
-        plan_resp = call_gemini_json(PROMPT_PLAN.format(topic=topic), system=SYSTEM_PLAN)
-        plan = plan_resp.get("skill_plan") or [
-            {"skill": "multi-step reasoning", "steps": ["identify", "compute", "check"]}
-        ]
+        # Run plan and items in parallel
+        plan_task = asyncio.create_task(
+            call_gemini_json_async(PROMPT_PLAN.format(topic=topic), system=SYSTEM_PLAN)
+        )
+        items_task = asyncio.create_task(
+            call_gemini_json_async(PROMPT_ITEMS, system=SYSTEM_ITEMS)
+        )
+        plan_resp, items_resp = await asyncio.gather(plan_task, items_task)
+        # Emit plan
+        plan = plan_resp.get("skill_plan") if isinstance(plan_resp, dict) else None
+        if not plan:
+            plan = [
+                {"skill": "multi-step reasoning", "steps": ["identify", "compute", "check"]}
+            ]
         await router.emit(EVENT_OUT_PLAN, {"ctx": ctx.to_dict(), "skill_plan": plan})
-        # Items
-        items_resp = call_gemini_json(PROMPT_ITEMS, system=SYSTEM_ITEMS)
-        raw_items = items_resp.get("items") or []
+        # Emit items
+        raw_items = items_resp.get("items") if isinstance(items_resp, dict) else []
         items = _coerce_items(raw_items) or [
             Item(
                 id=str(uuid.uuid4()),
