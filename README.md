@@ -42,11 +42,35 @@ Year 6 selective exam question generator powered by Gemini and simple agent-to-a
    - Endpoint: `POST /generate`
    - Request JSON (single subject only):
      ```json
-     { "subject": "math" }
+     {
+       "subject": "math",            // "math" | "thinking" | "english"
+       "difficulty": 3,               // optional, 1..3 (default 2)
+       "image_description": "Bar chart: A=4, B=6, C=5",   // optional; math/thinking only
+       "image_type": "graph"          // optional; graph|diagram|geometry|table|pattern|other
+     }
      ```
-   - Behavior: picks a random seed topic from that subject’s curriculum, generates and validates 1 item, returns:
+   - Behavior:
+     - Picks a random seed topic from the subject’s curriculum
+     - Generates exactly 1 item, validates it, returns:
      ```json
-     { "items": [/* validated items */], "failed": [/* failures, if any */] }
+     {
+       "items": [
+         {
+           "id": "...",
+           "subject": "math",
+           "prompt": "...",
+           "choices": [{"id":"A","text":"..."}, ...],
+           "answer": "C",
+           "solution": "...",
+           "tags": ["..."],
+           "difficulty": 3,
+           "image_description": "Bar chart: A=4, B=6, C=5",   // if provided
+           "image_type": "graph",
+           "uses_image": true
+         }
+       ],
+       "failed": []
+     }
      ```
 
 ## Repository layout
@@ -95,6 +119,7 @@ Question-Gen/
 - Gemini checks:
   - Single correct answer; correctness of the provided answer
   - For math: recomputation; for reading/thinking: unambiguity/plausibility
+  - If an image is provided (math/thinking): prompt must reference the image; answer must be derivable from the `image_description`
 - Output: passes are saved; failures included in the event payload `failed` (not saved)
 
 ## Performance
@@ -105,6 +130,8 @@ Question-Gen/
 - 5-option MCQ policy: set in `shared/config.py` (`choices=5`) and enforced in each agent’s coercion logic.
 - Subject-specific planning: Math/English each emit and consume their own plans (`skill.plan.math`, `skill.plan.english`).
 - Random topics: each agent samples two topics from `shared/topics.py` and instructs Gemini to integrate both.
+- Difficulty: pass `difficulty` (1..3) in the API; agents include it in prompts and set it on items.
+- Image support: for `math`/`thinking`, pass `image_description` and optional `image_type` to base the question on the described image.
 - Model selection: set `GEMINI_MODEL` in `.env`.
 
 ## Notes
