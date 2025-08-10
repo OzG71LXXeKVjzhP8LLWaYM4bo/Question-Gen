@@ -29,16 +29,16 @@ SYSTEM_ITEMS = (
 )
 
 PROMPT_ITEMS_BASE = (
-    "Generate 2 Year 6 math MCQs that require 1–3 steps."
+    "Generate 1 Year 6 math MCQ that requires 1–3 steps."
     " Topics: fractions, percentages, ratios, angles, patterns."
-    " Constraints: exact numeric answers, plausible distractors, 5 options per item."
+    " Constraints: exact numeric answer, plausible distractors, 5 options per item."
 )
 
 
 def _coerce_items(raw_items: list[dict]) -> list[Item]:
     items: list[Item] = []
     labels = ["A", "B", "C", "D", "E"]
-    for it in raw_items[:5]:
+    for it in raw_items[:1]:
         prompt = it.get("prompt") or it.get("question") or ""
         choices = it.get("choices") or []
         labeled: list[Choice] = []

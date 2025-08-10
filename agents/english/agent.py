@@ -28,7 +28,7 @@ SYSTEM_ITEMS = (
 )
 
 PROMPT_ITEMS_BASE = (
-    "Write a short 3-4 sentence passage (Year 6). Then create 2 MCQs: main idea and inference."
+    "Write a short 3-4 sentence passage (Year 6). Then create 1 MCQ: main idea or inference."
     " Keep language simple. 5 options per item."
 )
 
@@ -36,7 +36,7 @@ PROMPT_ITEMS_BASE = (
 def _coerce_items(raw_items: list[dict]) -> list[Item]:
     items: list[Item] = []
     labels = ["A", "B", "C", "D", "E"]
-    for it in raw_items[:5]:
+    for it in raw_items[:1]:
         prompt = it.get("prompt") or ""
         choices = it.get("choices") or []
         labeled: list[Choice] = []
