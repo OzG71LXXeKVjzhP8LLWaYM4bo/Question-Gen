@@ -22,7 +22,7 @@ Year 6 selective exam question generator powered by Gemini and simple agent-to-a
    GEMINI_MODEL=models/gemini-2.5-pro
    # or: GEMINI_MODEL=models/gemini-2.0-flash
    ```
-4. Run:
+4. CLI demo (one item per subject):
    ```bash
    uv run python main.py
    ```
@@ -35,11 +35,19 @@ Year 6 selective exam question generator powered by Gemini and simple agent-to-a
    VALIDATED: 1 items
    saved: questions/english/<job>_<ts>.json
    ```
-5. Alternative without uv:
+5. API server (FastAPI):
    ```bash
-   pip install python-a2a python-dotenv httpx
-   python main.py
+   uv run uvicorn api.app:app --host 0.0.0.0 --port 8000 --reload
    ```
+   - Endpoint: `POST /generate`
+   - Request JSON (single subject only):
+     ```json
+     { "subject": "math" }
+     ```
+   - Behavior: picks a random seed topic from that subject’s curriculum, generates and validates 1 item, returns:
+     ```json
+     { "items": [/* validated items */], "failed": [/* failures, if any */] }
+     ```
 
 ## Repository layout
 ```
@@ -57,6 +65,9 @@ Question-Gen/
     config.py             # Defaults (e.g., choices=5)
     gemini.py             # Async Gemini HTTP client (httpx), JSON responses
     storage.py            # Saves validated items under questions/{subject}/
+    topics.py             # Subject-specific topic pools (randomized selection)
+  api/
+    app.py                # FastAPI app exposing POST /generate
   questions/              # Generated JSON files (git-ignored)
   main.py                 # Wires agents, runs a demo job
   .env                    # Put GEMINI_API_KEY here
@@ -67,7 +78,7 @@ Question-Gen/
   - `agents/thinking` emits `skill.plan` and also generates `items.thinking`
   - `agents/math` emits `skill.plan.math`
   - `agents/english` emits `skill.plan.english`
-- Generators consume subject plans:
+- Generators consume subject plans (one item per subject by default):
   - `agents/math` listens to `skill.plan.math` → emits `items.math`
   - `agents/english` listens to `skill.plan.english` → emits `items.english`
   - `agents/thinking` directly emits `items.thinking`
@@ -93,7 +104,7 @@ Question-Gen/
 ## Configuration knobs
 - 5-option MCQ policy: set in `shared/config.py` (`choices=5`) and enforced in each agent’s coercion logic.
 - Subject-specific planning: Math/English each emit and consume their own plans (`skill.plan.math`, `skill.plan.english`).
-- Item counts and types: adjust prompt strings in `agents/*/agent.py` (`PROMPT`/`SYSTEM`).
+- Random topics: each agent samples two topics from `shared/topics.py` and instructs Gemini to integrate both.
 - Model selection: set `GEMINI_MODEL` in `.env`.
 
 ## Notes

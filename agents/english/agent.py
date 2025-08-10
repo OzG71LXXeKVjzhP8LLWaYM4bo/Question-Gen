@@ -3,6 +3,8 @@ import uuid
 from orchestrator.router import Router
 from shared.schemas import JobContext, Item, Choice
 from shared.gemini import call_gemini_json_async
+from shared.topics import ENGLISH_TOPICS
+import random
 
 # Events
 EVENT_IN_TOPIC = "topic.received"
@@ -28,14 +30,16 @@ SYSTEM_ITEMS = (
 )
 
 PROMPT_ITEMS_BASE = (
-    "Write a short 3-4 sentence passage (Year 6). Then create 1 MCQ: main idea or inference."
-    " Keep language simple. 5 options per item."
+    "Write a short 3-4 sentence passage (Year 6). Then create 1 MCQ that targets both: {topic_a} and {topic_b}."
+    " Example pairs: main idea + inference, detail + reference. Keep language simple. 5 options per item."
 )
 
 
 def _coerce_items(raw_items: list[dict]) -> list[Item]:
     items: list[Item] = []
     labels = ["A", "B", "C", "D", "E"]
+    if not isinstance(raw_items, list):
+        return []
     for it in raw_items[:1]:
         prompt = it.get("prompt") or ""
         choices = it.get("choices") or []
@@ -99,25 +103,17 @@ def register(router: Router) -> None:
             focus = p0.get("focus") or "main idea and inference"
             ptype = p0.get("passage_type") or "informational"
             plan_hint = f"\nPassage type: {ptype}. Focus: {focus}."
-        resp = await call_gemini_json_async(PROMPT_ITEMS_BASE + plan_hint, system=SYSTEM_ITEMS)
-        raw_items = resp.get("items") or []
-        items = _coerce_items(raw_items) or [
-            Item(
-                id=str(uuid.uuid4()),
-                subject="english",
-                prompt="What is the main idea of the short passage?",
-                choices=[
-                    Choice(id="A", text="Detail unrelated to main point"),
-                    Choice(id="B", text="Correct main idea"),
-                    Choice(id="C", text="Minor detail"),
-                    Choice(id="D", text="Author background"),
-                    Choice(id="E", text="Opinion not stated"),
-                ],
-                answer="B",
-                solution="The passage primarily argues for the main point stated in option B.",
-                tags=["main-idea", "Year6"],
-            )
-        ]
+        # Retry up to 2 times with topic pairing
+        temps = [0.5, 0.8]
+        items: list[Item] = []
+        topic_a, topic_b = random.sample(ENGLISH_TOPICS, 2)
+        prompt = PROMPT_ITEMS_BASE.format(topic_a=topic_a, topic_b=topic_b) + plan_hint
+        for t in temps:
+            resp = await call_gemini_json_async(prompt, system=SYSTEM_ITEMS, temperature=t)
+            raw_items = (resp.get("items") or []) if isinstance(resp, dict) else []
+            items = _coerce_items(raw_items)
+            if items:
+                break
         await router.emit(EVENT_OUT_ITEMS, {"ctx": ctx.to_dict(), "items": [i.to_dict() for i in items]})
 
     router.subscribe(EVENT_IN_PLAN_PRIMARY, handle_plan)
