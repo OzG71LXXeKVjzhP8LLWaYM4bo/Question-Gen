@@ -2,7 +2,7 @@ from __future__ import annotations
 import asyncio
 from typing import Literal, Optional, Dict, List
 from fastapi import FastAPI
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from orchestrator.router import Router
 from orchestrator.jobs import start_job
 from agents.thinking.agent import register as reg_thinking
@@ -19,6 +19,8 @@ app = FastAPI(title="Question-Gen API", version="0.1.0")
 class GenerateRequest(BaseModel):
     subject: Literal["thinking", "math", "english"]
     difficulty: Optional[int] = 2  # 1..3
+    image_description: Optional[str] = Field(default=None, max_length=500)
+    image_type: Optional[Literal["graph", "diagram", "geometry", "table", "pattern", "other"]] = None
 
 
 class GenerateResponse(BaseModel):
@@ -65,7 +67,9 @@ async def generate(req: GenerateRequest) -> GenerateResponse:
     # Run router and job
     loop_task = asyncio.create_task(router.run())
     seed_topic = _pick_seed_topic_for_subject(req.subject)
-    constraints = {"difficulty": req.difficulty}
+    constraints: Dict = {"difficulty": req.difficulty}
+    if req.subject in ("math", "thinking") and req.image_description:
+        constraints["image"] = {"description": req.image_description, "type": req.image_type}
     await start_job(router, topic=seed_topic, constraints=constraints)
 
     # Timeout guard: 30s
