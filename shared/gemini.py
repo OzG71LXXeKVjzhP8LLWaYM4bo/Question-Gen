@@ -16,16 +16,19 @@ def _ensure_model_path(model: str) -> str:
     return model if model.startswith("models/") else f"models/{model}"
 
 
-def _build_request(prompt: str, system: Optional[str], temperature: float, max_tokens: int) -> Dict[str, Any]:
+def _build_request(prompt: str, system: Optional[str], temperature: float, max_tokens: int, top_p: Optional[float]) -> Dict[str, Any]:
+    gen_cfg: Dict[str, Any] = {
+        "temperature": temperature,
+        "maxOutputTokens": max_tokens,
+        "responseMimeType": "application/json",
+    }
+    if top_p is not None:
+        gen_cfg["topP"] = top_p
     req: Dict[str, Any] = {
         "contents": [
             {"role": "user", "parts": [{"text": prompt}]}
         ],
-        "generationConfig": {
-            "temperature": temperature,
-            "maxOutputTokens": max_tokens,
-            "responseMimeType": "application/json",
-        },
+        "generationConfig": gen_cfg,
     }
     if system:
         req["systemInstruction"] = {"parts": [{"text": system}]}
@@ -41,13 +44,13 @@ def _parse_text(response_obj: Dict[str, Any]) -> str:
 
 async def call_gemini_json_async(prompt: str, *, system: Optional[str] = None, model: Optional[str] = None,
                                  temperature: float = 0.4, max_output_tokens: int = 2048,
-                                 timeout_s: float = 30.0) -> Dict[str, Any]:
+                                 timeout_s: float = 30.0, top_p: Optional[float] = None) -> Dict[str, Any]:
     api_key = _GEMINI_API_KEY
     if not api_key:
         return {"_error": {"status": 401, "message": "Missing GEMINI_API_KEY"}}
     model_name = _ensure_model_path(model or _DEFAULT_MODEL)
     url = f"{_API_BASE}/{model_name}:generateContent?key={api_key}"
-    payload = _build_request(prompt, system, temperature, max_output_tokens)
+    payload = _build_request(prompt, system, temperature, max_output_tokens, top_p)
     try:
         async with httpx.AsyncClient(timeout=timeout_s) as client:
             resp = await client.post(url, json=payload)

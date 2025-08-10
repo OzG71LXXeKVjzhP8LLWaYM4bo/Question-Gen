@@ -18,6 +18,7 @@ app = FastAPI(title="Question-Gen API", version="0.1.0")
 
 class GenerateRequest(BaseModel):
     subject: Literal["thinking", "math", "english"]
+    difficulty: Optional[int] = 2  # 1..3
 
 
 class GenerateResponse(BaseModel):
@@ -64,7 +65,8 @@ async def generate(req: GenerateRequest) -> GenerateResponse:
     # Run router and job
     loop_task = asyncio.create_task(router.run())
     seed_topic = _pick_seed_topic_for_subject(req.subject)
-    await start_job(router, topic=seed_topic)
+    constraints = {"difficulty": req.difficulty}
+    await start_job(router, topic=seed_topic, constraints=constraints)
 
     # Timeout guard: 30s
     try:

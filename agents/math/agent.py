@@ -34,6 +34,7 @@ PROMPT_ITEMS_BASE = (
     "Generate 1 Year 6 math MCQ that requires 1–3 steps."
     " Integrate both topics: {topic_a} and {topic_b}."
     " Use exact numeric answer, plausible distractors, and 5 options (A–E)."
+    " Target difficulty level: {difficulty} (1 easy, 2 medium, 3 hard)."
 )
 
 
@@ -68,6 +69,7 @@ def _coerce_items(raw_items: list[dict]) -> list[Item]:
                 answer=answer,
                 solution=solution,
                 tags=tags if isinstance(tags, list) else [str(tags)],
+                difficulty=int(it.get("difficulty", 2)) if isinstance(it, dict) else 2,
             )
         )
     return items
@@ -121,7 +123,8 @@ def register(router: Router) -> None:
         items: list[Item] = []
         # choose two topics
         topic_a, topic_b = random.sample(MATH_TOPICS, 2)
-        prompt = PROMPT_ITEMS_BASE.format(topic_a=topic_a, topic_b=topic_b) + plan_hint
+        difficulty = int(ctx.constraints.get("difficulty", 2)) if isinstance(ctx.constraints, dict) else 2
+        prompt = PROMPT_ITEMS_BASE.format(topic_a=topic_a, topic_b=topic_b, difficulty=difficulty) + plan_hint
         for t in temps:
             resp = await call_gemini_json_async(prompt, system=SYSTEM_ITEMS, temperature=t)
             err = resp.get("_error") if isinstance(resp, dict) else None
@@ -135,6 +138,10 @@ def register(router: Router) -> None:
             items = _coerce_items(raw_items)
             if items:
                 break
+        # Ensure difficulty is set if model did not include it
+        for it in items:
+            if not getattr(it, "difficulty", None):
+                it.difficulty = difficulty
         await router.emit(EVENT_OUT_ITEMS, {"ctx": ctx.to_dict(), "items": [i.to_dict() for i in items]})
 
     router.subscribe(EVENT_IN_PLAN_PRIMARY, handle_plan)
