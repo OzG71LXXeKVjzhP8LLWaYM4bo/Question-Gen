@@ -3,6 +3,8 @@ import uuid
 from orchestrator.router import Router
 from shared.schemas import JobContext, Item, Choice
 from shared.gemini import call_gemini_json_async
+from shared.topics import MATH_TOPICS
+import random
 
 # Events
 EVENT_IN_TOPIC = "topic.received"
@@ -30,14 +32,16 @@ SYSTEM_ITEMS = (
 
 PROMPT_ITEMS_BASE = (
     "Generate 1 Year 6 math MCQ that requires 1–3 steps."
-    " Topics: fractions, percentages, ratios, angles, patterns."
-    " Constraints: exact numeric answer, plausible distractors, 5 options per item."
+    " Integrate both topics: {topic_a} and {topic_b}."
+    " Use exact numeric answer, plausible distractors, and 5 options (A–E)."
 )
 
 
 def _coerce_items(raw_items: list[dict]) -> list[Item]:
     items: list[Item] = []
     labels = ["A", "B", "C", "D", "E"]
+    if not isinstance(raw_items, list):
+        return []
     for it in raw_items[:1]:
         prompt = it.get("prompt") or it.get("question") or ""
         choices = it.get("choices") or []
@@ -110,25 +114,27 @@ def register(router: Router) -> None:
             dists = ", ".join(p0.get("distractors", [])[:4]) if isinstance(p0.get("distractors"), list) else ""
             topic = p0.get("topic") or p0.get("skill") or "Year 6 math"
             plan_hint = f"\nFocus topic: {topic}. Steps: {steps}. Distractors to include: {dists}."
-        resp = await call_gemini_json_async(PROMPT_ITEMS_BASE + plan_hint, system=SYSTEM_ITEMS)
-        raw_items = resp.get("items") or []
-        items = _coerce_items(raw_items) or [
-            Item(
-                id=str(uuid.uuid4()),
-                subject="math",
-                prompt="What is 3/4 of 20?",
-                choices=[
-                    Choice(id="A", text="15"),
-                    Choice(id="B", text="12"),
-                    Choice(id="C", text="10"),
-                    Choice(id="D", text="5"),
-                    Choice(id="E", text="8"),
-                ],
-                answer="A",
-                solution="20 × 3/4 = 15",
-                tags=["fractions", "Year6"],
-            )
-        ]
+        # Retry with temperature variations and 429 backoff
+        import asyncio as _asyncio
+        temps = [0.5, 0.8]
+        backoff = 1.0
+        items: list[Item] = []
+        # choose two topics
+        topic_a, topic_b = random.sample(MATH_TOPICS, 2)
+        prompt = PROMPT_ITEMS_BASE.format(topic_a=topic_a, topic_b=topic_b) + plan_hint
+        for t in temps:
+            resp = await call_gemini_json_async(prompt, system=SYSTEM_ITEMS, temperature=t)
+            err = resp.get("_error") if isinstance(resp, dict) else None
+            if err and err.get("status") == 429:
+                await _asyncio.sleep(backoff)
+                backoff *= 2
+                # retry same temperature once after backoff
+                resp = await call_gemini_json_async(prompt, system=SYSTEM_ITEMS, temperature=t)
+                err = resp.get("_error") if isinstance(resp, dict) else None
+            raw_items = (resp.get("items") or []) if isinstance(resp, dict) else []
+            items = _coerce_items(raw_items)
+            if items:
+                break
         await router.emit(EVENT_OUT_ITEMS, {"ctx": ctx.to_dict(), "items": [i.to_dict() for i in items]})
 
     router.subscribe(EVENT_IN_PLAN_PRIMARY, handle_plan)

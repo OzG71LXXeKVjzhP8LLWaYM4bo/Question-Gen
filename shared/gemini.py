@@ -44,7 +44,7 @@ async def call_gemini_json_async(prompt: str, *, system: Optional[str] = None, m
                                  timeout_s: float = 30.0) -> Dict[str, Any]:
     api_key = _GEMINI_API_KEY
     if not api_key:
-        return {}
+        return {"_error": {"status": 401, "message": "Missing GEMINI_API_KEY"}}
     model_name = _ensure_model_path(model or _DEFAULT_MODEL)
     url = f"{_API_BASE}/{model_name}:generateContent?key={api_key}"
     payload = _build_request(prompt, system, temperature, max_output_tokens)
@@ -63,17 +63,15 @@ async def call_gemini_json_async(prompt: str, *, system: Optional[str] = None, m
                         return json.loads(text[start:end+1])
                     except Exception:
                         pass
-                return {}
+                return {"_error": {"status": 422, "message": "Non-JSON model output"}}
+    except httpx.HTTPStatusError as e:
+        status = e.response.status_code if e.response is not None else 0
+        detail = e.response.text if e.response is not None else str(e)
+        return {"_error": {"status": status, "message": detail}}
     except httpx.HTTPError as e:
-        try:
-            detail = e.response.text  # type: ignore[union-attr]
-        except Exception:
-            detail = str(e)
-        print("Gemini HTTPError:", detail)
-        return {}
+        return {"_error": {"status": 0, "message": str(e)}}
     except Exception as e:
-        print("Gemini error:", e)
-        return {}
+        return {"_error": {"status": 0, "message": str(e)}}
 
 
 # Optional sync shim for compatibility (used nowhere by default)

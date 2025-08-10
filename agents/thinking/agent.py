@@ -4,6 +4,8 @@ import asyncio
 from orchestrator.router import Router
 from shared.schemas import JobContext, Item, Choice
 from shared.gemini import call_gemini_json_async
+from shared.topics import THINKING_TOPICS
+import random
 
 EVENT_IN = "topic.received"
 EVENT_OUT_PLAN = "skill.plan"
@@ -29,8 +31,9 @@ SYSTEM_ITEMS = (
 )
 
 PROMPT_ITEMS = (
-    "Generate 1 Year 6 Thinking Skills MCQ covering one of:"
-    " analogies, pattern completion, ordering/ranking, or logical deduction."
+    "Generate 1 Year 6 Thinking Skills MCQ that requires multi-step reasoning"
+    " and integrates both topics: {topic_a} and {topic_b}."
+    " Choose from analogies, pattern completion, ordering/ranking, or logical deduction."
     " Provide 5 options per item."
 )
 
@@ -38,6 +41,8 @@ PROMPT_ITEMS = (
 def _coerce_items(raw_items: list[dict]) -> list[Item]:
     items: list[Item] = []
     labels = ["A", "B", "C", "D", "E"]
+    if not isinstance(raw_items, list):
+        return []
     for it in raw_items[:1]:
         prompt = it.get("prompt") or it.get("question") or ""
         choices = it.get("choices") or []
@@ -70,10 +75,21 @@ def register(router: Router) -> None:
         plan_task = asyncio.create_task(
             call_gemini_json_async(PROMPT_PLAN.format(topic=topic), system=SYSTEM_PLAN)
         )
-        items_task = asyncio.create_task(
-            call_gemini_json_async(PROMPT_ITEMS, system=SYSTEM_ITEMS)
-        )
-        plan_resp, items_resp = await asyncio.gather(plan_task, items_task)
+        # Retry items up to 2 times
+        async def _gen_items() -> list[Item]:
+            temps = [0.5, 0.8]
+            topic_a, topic_b = random.sample(THINKING_TOPICS, 2)
+            prompt = PROMPT_ITEMS.format(topic_a=topic_a, topic_b=topic_b)
+            for t in temps:
+                resp = await call_gemini_json_async(prompt, system=SYSTEM_ITEMS, temperature=t)
+                raw = (resp.get("items") or []) if isinstance(resp, dict) else []
+                items = _coerce_items(raw)
+                if items:
+                    return items
+            return []
+
+        items_task = asyncio.create_task(_gen_items())
+        plan_resp, items = await asyncio.gather(plan_task, items_task)
         # Emit plan
         plan = plan_resp.get("skill_plan") if isinstance(plan_resp, dict) else None
         if not plan:
@@ -81,25 +97,7 @@ def register(router: Router) -> None:
                 {"skill": "multi-step reasoning", "steps": ["identify", "compute", "check"]}
             ]
         await router.emit(EVENT_OUT_PLAN, {"ctx": ctx.to_dict(), "skill_plan": plan})
-        # Emit items
-        raw_items = items_resp.get("items") if isinstance(items_resp, dict) else []
-        items = _coerce_items(raw_items) or [
-            Item(
-                id=str(uuid.uuid4()),
-                subject="thinking",
-                prompt="Which figure comes next in the pattern? (use text description)",
-                choices=[
-                    Choice(id="A", text="Pattern continues by adding one dot"),
-                    Choice(id="B", text="Pattern removes one dot"),
-                    Choice(id="C", text="Pattern mirrors horizontally"),
-                    Choice(id="D", text="Pattern rotates 90 degrees"),
-                    Choice(id="E", text="Pattern repeats from start"),
-                ],
-                answer="A",
-                solution="Each step adds one dot; next has one more dot than previous.",
-                tags=["pattern", "Year6"],
-            )
-        ]
+        # Emit items (may be empty in strict mode)
         await router.emit(EVENT_OUT_ITEMS, {"ctx": ctx.to_dict(), "items": [i.to_dict() for i in items]})
 
     router.subscribe(EVENT_IN, handle)
