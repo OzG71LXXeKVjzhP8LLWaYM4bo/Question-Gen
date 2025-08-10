@@ -83,6 +83,14 @@ def register(router: Router) -> None:
             topic_a, topic_b = random.sample(THINKING_TOPICS, 2)
             difficulty = int(ctx.constraints.get("difficulty", 2)) if isinstance(ctx.constraints, dict) else 2
             prompt = PROMPT_ITEMS.format(topic_a=topic_a, topic_b=topic_b, difficulty=difficulty)
+            image = ctx.constraints.get("image") if isinstance(ctx.constraints, dict) else None
+            if isinstance(image, dict) and image.get("description"):
+                img_type = image.get("type") or "other"
+                img_desc = str(image.get("description"))[:500]
+                prompt = (
+                    f"Image (type: {img_type}): {img_desc}\n"
+                    "Use the image to construct the reasoning task. Reference 'the image' in the prompt.\n"
+                ) + prompt
             for t in temps:
                 resp = await call_gemini_json_async(prompt, system=SYSTEM_ITEMS, temperature=t)
                 raw = (resp.get("items") or []) if isinstance(resp, dict) else []
@@ -101,8 +109,13 @@ def register(router: Router) -> None:
             ]
         await router.emit(EVENT_OUT_PLAN, {"ctx": ctx.to_dict(), "skill_plan": plan})
         # Emit items (may be empty in strict mode)
+        image = ctx.constraints.get("image") if isinstance(ctx.constraints, dict) else None
         for it in items:
             it.difficulty = int(ctx.constraints.get("difficulty", 2)) if isinstance(ctx.constraints, dict) else 2
+            if isinstance(image, dict) and image.get("description"):
+                it.image_description = str(image.get("description"))[:500]
+                it.image_type = str(image.get("type") or "other")
+                it.uses_image = True
         await router.emit(EVENT_OUT_ITEMS, {"ctx": ctx.to_dict(), "items": [i.to_dict() for i in items]})
 
     router.subscribe(EVENT_IN, handle)

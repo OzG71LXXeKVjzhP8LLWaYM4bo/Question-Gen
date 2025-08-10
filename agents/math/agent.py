@@ -124,7 +124,15 @@ def register(router: Router) -> None:
         # choose two topics
         topic_a, topic_b = random.sample(MATH_TOPICS, 2)
         difficulty = int(ctx.constraints.get("difficulty", 2)) if isinstance(ctx.constraints, dict) else 2
+        image = ctx.constraints.get("image") if isinstance(ctx.constraints, dict) else None
         prompt = PROMPT_ITEMS_BASE.format(topic_a=topic_a, topic_b=topic_b, difficulty=difficulty) + plan_hint
+        if isinstance(image, dict) and image.get("description"):
+            img_type = image.get("type") or "other"
+            img_desc = str(image.get("description"))[:500]
+            prompt = (
+                f"Image (type: {img_type}): {img_desc}\n"
+                "Use the image to construct the problem. Reference 'the image' in the prompt.\n"
+            ) + prompt
         for t in temps:
             resp = await call_gemini_json_async(prompt, system=SYSTEM_ITEMS, temperature=t)
             err = resp.get("_error") if isinstance(resp, dict) else None
@@ -141,6 +149,10 @@ def register(router: Router) -> None:
         # Ensure difficulty is set if model did not include it
         for it in items:
             it.difficulty = difficulty
+            if isinstance(image, dict) and image.get("description"):
+                it.image_description = str(image.get("description"))[:500]
+                it.image_type = str(image.get("type") or "other")
+                it.uses_image = True
         await router.emit(EVENT_OUT_ITEMS, {"ctx": ctx.to_dict(), "items": [i.to_dict() for i in items]})
 
     router.subscribe(EVENT_IN_PLAN_PRIMARY, handle_plan)

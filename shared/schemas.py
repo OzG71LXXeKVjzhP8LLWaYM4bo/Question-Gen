@@ -52,3 +52,6 @@ class Item(DictMixin):
     evidence_ids: List[str] = field(default_factory=list)
     tags: List[str] = field(default_factory=list)
     difficulty: int = 2  # 1 easy, 2 medium, 3 hard
+    image_description: Optional[str] = None
+    image_type: Optional[str] = None  # graph|diagram|geometry|table|pattern|other
+    uses_image: bool = False
