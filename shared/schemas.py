@@ -51,3 +51,4 @@ class Item(DictMixin):
     solution: str
     evidence_ids: List[str] = field(default_factory=list)
     tags: List[str] = field(default_factory=list)
+    difficulty: int = 2  # 1 easy, 2 medium, 3 hard

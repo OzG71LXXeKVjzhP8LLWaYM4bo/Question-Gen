@@ -26,13 +26,28 @@ PROMPT_PLAN_TEMPLATE = (
 SYSTEM_ITEMS = (
     "You are a Year 6 Reading Comprehension item writer."
     " Create MCQs with 5 options (A-E) and a single correct answer."
-    " Respond ONLY with JSON: {\"items\":[{prompt, choices:[{id,text}], answer, solution, tags}]}."
+    " Avoid repetitive or overused topics (e.g., bees, honey, pollination)."
+    " Use varied, everyday contexts suitable for Year 6 students."
+    " Respond ONLY with JSON: {\"items\":[{prompt, choices:[{id,text}], answer, solution, tags, difficulty}]}."
 )
 
 PROMPT_ITEMS_BASE = (
     "Write a short 3-4 sentence passage (Year 6). Then create 1 MCQ that targets both: {topic_a} and {topic_b}."
     " Example pairs: main idea + inference, detail + reference. Keep language simple. 5 options per item."
+    " Target difficulty level: {difficulty} (1 easy, 2 medium, 3 hard)."
+    " Incorporate this distinct context: {context}."
 )
+
+CONTEXTS = [
+    "a school science fair",
+    "a class trip to the museum",
+    "a neighbourhood community garden",
+    "preparing for a sports day",
+    "a family camping weekend",
+    "a library reading challenge",
+    "a beach clean-up event",
+    "a robotics club demonstration",
+]
 
 
 def _coerce_items(raw_items: list[dict]) -> list[Item]:
@@ -59,6 +74,7 @@ def _coerce_items(raw_items: list[dict]) -> list[Item]:
                 answer=it.get("answer", "A"),
                 solution=it.get("solution", ""),
                 tags=it.get("tags", ["Year6", "reading"]),
+                difficulty=int(it.get("difficulty", 2)) if isinstance(it, dict) else 2,
             )
         )
     return items
@@ -104,16 +120,22 @@ def register(router: Router) -> None:
             ptype = p0.get("passage_type") or "informational"
             plan_hint = f"\nPassage type: {ptype}. Focus: {focus}."
         # Retry up to 2 times with topic pairing
-        temps = [0.5, 0.8]
+        retries = [(0.6, 0.9), (0.8, 0.95)]  # (temperature, top_p)
         items: list[Item] = []
         topic_a, topic_b = random.sample(ENGLISH_TOPICS, 2)
-        prompt = PROMPT_ITEMS_BASE.format(topic_a=topic_a, topic_b=topic_b) + plan_hint
-        for t in temps:
-            resp = await call_gemini_json_async(prompt, system=SYSTEM_ITEMS, temperature=t)
+        difficulty = int(ctx.constraints.get("difficulty", 2)) if isinstance(ctx.constraints, dict) else 2
+        context = random.choice(CONTEXTS)
+        prompt = PROMPT_ITEMS_BASE.format(topic_a=topic_a, topic_b=topic_b, difficulty=difficulty, context=context) + plan_hint
+        for (t, p) in retries:
+            resp = await call_gemini_json_async(prompt, system=SYSTEM_ITEMS, temperature=t, top_p=p)
             raw_items = (resp.get("items") or []) if isinstance(resp, dict) else []
             items = _coerce_items(raw_items)
             if items:
                 break
+        # Ensure difficulty is set if model did not include it
+        for it in items:
+            if not getattr(it, "difficulty", None):
+                it.difficulty = difficulty
         await router.emit(EVENT_OUT_ITEMS, {"ctx": ctx.to_dict(), "items": [i.to_dict() for i in items]})
 
     router.subscribe(EVENT_IN_PLAN_PRIMARY, handle_plan)

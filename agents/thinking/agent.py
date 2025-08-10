@@ -35,6 +35,7 @@ PROMPT_ITEMS = (
     " and integrates both topics: {topic_a} and {topic_b}."
     " Choose from analogies, pattern completion, ordering/ranking, or logical deduction."
     " Provide 5 options per item."
+    " Target difficulty level: {difficulty} (1 easy, 2 medium, 3 hard)."
 )
 
 
@@ -62,6 +63,7 @@ def _coerce_items(raw_items: list[dict]) -> list[Item]:
                 answer=it.get("answer", "A"),
                 solution=it.get("solution", ""),
                 tags=it.get("tags", ["Year6", "thinking"]),
+                difficulty=int(it.get("difficulty", 2)) if isinstance(it, dict) else 2,
             )
         )
     return items
@@ -79,7 +81,8 @@ def register(router: Router) -> None:
         async def _gen_items() -> list[Item]:
             temps = [0.5, 0.8]
             topic_a, topic_b = random.sample(THINKING_TOPICS, 2)
-            prompt = PROMPT_ITEMS.format(topic_a=topic_a, topic_b=topic_b)
+            difficulty = int(ctx.constraints.get("difficulty", 2)) if isinstance(ctx.constraints, dict) else 2
+            prompt = PROMPT_ITEMS.format(topic_a=topic_a, topic_b=topic_b, difficulty=difficulty)
             for t in temps:
                 resp = await call_gemini_json_async(prompt, system=SYSTEM_ITEMS, temperature=t)
                 raw = (resp.get("items") or []) if isinstance(resp, dict) else []
@@ -98,6 +101,10 @@ def register(router: Router) -> None:
             ]
         await router.emit(EVENT_OUT_PLAN, {"ctx": ctx.to_dict(), "skill_plan": plan})
         # Emit items (may be empty in strict mode)
+        # Ensure difficulty is set if model did not include it
+        for it in items:
+            if not getattr(it, "difficulty", None):
+                it.difficulty = int(ctx.constraints.get("difficulty", 2)) if isinstance(ctx.constraints, dict) else 2
         await router.emit(EVENT_OUT_ITEMS, {"ctx": ctx.to_dict(), "items": [i.to_dict() for i in items]})
 
     router.subscribe(EVENT_IN, handle)
