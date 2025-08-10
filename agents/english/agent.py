@@ -134,8 +134,7 @@ def register(router: Router) -> None:
                 break
         # Ensure difficulty is set if model did not include it
         for it in items:
-            if not getattr(it, "difficulty", None):
-                it.difficulty = difficulty
+            it.difficulty = difficulty
         await router.emit(EVENT_OUT_ITEMS, {"ctx": ctx.to_dict(), "items": [i.to_dict() for i in items]})
 
     router.subscribe(EVENT_IN_PLAN_PRIMARY, handle_plan)

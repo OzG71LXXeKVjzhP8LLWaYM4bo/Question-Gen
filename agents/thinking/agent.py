@@ -101,10 +101,8 @@ def register(router: Router) -> None:
             ]
         await router.emit(EVENT_OUT_PLAN, {"ctx": ctx.to_dict(), "skill_plan": plan})
         # Emit items (may be empty in strict mode)
-        # Ensure difficulty is set if model did not include it
         for it in items:
-            if not getattr(it, "difficulty", None):
-                it.difficulty = int(ctx.constraints.get("difficulty", 2)) if isinstance(ctx.constraints, dict) else 2
+            it.difficulty = int(ctx.constraints.get("difficulty", 2)) if isinstance(ctx.constraints, dict) else 2
         await router.emit(EVENT_OUT_ITEMS, {"ctx": ctx.to_dict(), "items": [i.to_dict() for i in items]})
 
     router.subscribe(EVENT_IN, handle)
