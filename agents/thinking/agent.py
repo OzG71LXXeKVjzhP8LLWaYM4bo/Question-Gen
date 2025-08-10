@@ -29,8 +29,8 @@ SYSTEM_ITEMS = (
 )
 
 PROMPT_ITEMS = (
-    "Generate 2 Year 6 Thinking Skills MCQs covering two different types"
-    " from: analogies, pattern completion, ordering/ranking, logical deduction."
+    "Generate 1 Year 6 Thinking Skills MCQ covering one of:"
+    " analogies, pattern completion, ordering/ranking, or logical deduction."
     " Provide 5 options per item."
 )
 
@@ -38,7 +38,7 @@ PROMPT_ITEMS = (
 def _coerce_items(raw_items: list[dict]) -> list[Item]:
     items: list[Item] = []
     labels = ["A", "B", "C", "D", "E"]
-    for it in raw_items[:5]:
+    for it in raw_items[:1]:
         prompt = it.get("prompt") or it.get("question") or ""
         choices = it.get("choices") or []
         labeled: list[Choice] = []
